@@ -636,7 +636,7 @@ export default function ISFDashboard() {
       setNow(new Date());
       setTick(t => t + 1);
       setLive(prev => {
-        const next = { ...prev };
+        const next: Record<string, number> = { ...prev };
         SOP.forEach(p => {
           const drift = (Math.random() - 0.5) * (p.max - p.min) * 0.05;
           next[p.id] = parseFloat(clamp(prev[p.id] + drift, p.lo, p.hi).toFixed(2));
