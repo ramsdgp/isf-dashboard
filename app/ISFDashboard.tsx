@@ -39,7 +39,7 @@ const SOP = [
   { id:"slagTapTemp",    label:"Slag Tapping Temp", unit:"°C",      stage:"SLAG",   min:1100, max:1200, target:1150, tol:30,   lo:1050, hi:1250 },
   { id:"zincInSlag",     label:"Zinc in Slag",      unit:"%Zn",     stage:"SLAG",   min:0,    max:2.0,  target:1.5,  tol:0.25, lo:0,    hi:4,   lowerBetter:true },
   { id:"cokeRate",       label:"Coke Rate",         unit:"kg/t HM", stage:"SMELT",  min:280,  max:320,  target:300,  tol:10,   lo:250,  hi:350, lowerBetter:true },
-] as const;
+];
 
 const FEED_PROFILES: Record<string, { znContent:number; gangue:number; sulfur:number; moisture:number }> = {
   "High-Grade Concentrate":  { znContent:52, gangue:6,  sulfur:0.8, moisture:4  },
