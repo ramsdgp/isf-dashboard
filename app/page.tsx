@@ -1,6 +1,6 @@
-import dynamic from "next/dynamic";
+"use client";
 
-const ISFDashboard = dynamic(() => import("./ISFDashboard"), { ssr: false });
+import ISFDashboard from "./ISFDashboard";
 
 export default function Page() {
   return <ISFDashboard />;
