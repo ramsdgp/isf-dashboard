@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect, useRef } from "react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
@@ -27,24 +28,32 @@ const T = {
   label:   "#8aaac8",
 };
 
-const STAGE_CLR = { SINTER: T.amber, SMELT: T.red, TUYERE: T.orange, COND: T.blue, SLAG: T.violet };
+const STAGE_CLR: Record<string, string> = {
+  SINTER: "#f59e0b",
+  SMELT:  "#f43f5e",
+  TUYERE: "#f97316",
+  COND:   "#38bdf8",
+  SLAG:   "#8b5cf6",
+};
 
-const SOP = [
-  // ── SINTER · Thermal ──
+interface SOPParam {
+  id: string; label: string; unit: string; stage: string;
+  min: number; max: number; target: number; tol: number;
+  lo: number; hi: number; sub?: string; lowerBetter?: boolean;
+}
 
+const SOP: SOPParam[] = [
   { id:"cokePreHeat",       label:"Coke Preheat Temp",       unit:"°C",         stage:"SINTER", min:700,  max:800,  target:750,  tol:25,   lo:650,   hi:850,  sub:"THERMAL"  },
   { id:"roastingTemp",      label:"Roasting Temp",           unit:"°C",         stage:"SINTER", min:650,  max:750,  target:700,  tol:20,   lo:600,   hi:800,  sub:"THERMAL"  },
   { id:"ignitionTemp",      label:"Ignition Temperature",    unit:"°C",         stage:"SINTER", min:1100, max:1250, target:1150, tol:30,   lo:1000,  hi:1350, sub:"THERMAL"  },
   { id:"ignitionHoodTemp",  label:"Ignition Hood Temp",      unit:"°C",         stage:"SINTER", min:900,  max:1000, target:950,  tol:25,   lo:800,   hi:1100, sub:"THERMAL"  },
   { id:"burnThroughTemp",   label:"Burn-Through Point",      unit:"°C",         stage:"SINTER", min:150,  max:250,  target:200,  tol:20,   lo:80,    hi:320,  sub:"THERMAL"  },
   { id:"wasteGasTemp",      label:"Waste Gas Temp",          unit:"°C",         stage:"SINTER", min:80,   max:160,  target:120,  tol:20,   lo:40,    hi:220,  sub:"THERMAL"  },
-  // ── SINTER · Mechanical / Process ──
   { id:"strandSpeed",       label:"Strand Speed",            unit:" m/min",     stage:"SINTER", min:1.5,  max:2.5,  target:2.0,  tol:0.2,  lo:1.0,   hi:3.0,  sub:"PROCESS"  },
   { id:"bedDepth",          label:"Sinter Bed Depth",        unit:" mm",        stage:"SINTER", min:250,  max:350,  target:300,  tol:15,   lo:200,   hi:400,  sub:"PROCESS"  },
   { id:"windboxSuction",    label:"Windbox Suction",         unit:" mbar",      stage:"SINTER", min:1200, max:1800, target:1500, tol:100,  lo:1000,  hi:2000, sub:"PROCESS"  },
   { id:"sinterFeedRate",    label:"Feed Rate",               unit:" t/h",       stage:"SINTER", min:50,   max:80,   target:65,   tol:5,    lo:35,    hi:95,   sub:"PROCESS"  },
   { id:"returnFinesRatio",  label:"Return Fines Ratio",      unit:"%",          stage:"SINTER", min:20,   max:40,   target:30,   tol:4,    lo:10,    hi:55,   sub:"PROCESS"  },
-  // ── SINTER · Product Quality ──
   { id:"sinterBasicity",    label:"Sinter Basicity (B2)",    unit:" CaO/SiO₂",  stage:"SINTER", min:1.6,  max:2.0,  target:1.8,  tol:0.1,  lo:1.2,   hi:2.4,  sub:"QUALITY"  },
   { id:"tumbleIndex",       label:"Tumble Index (TI)",       unit:"%",          stage:"SINTER", min:65,   max:80,   target:70,   tol:3,    lo:55,    hi:90,   sub:"QUALITY"  },
   { id:"reducibilityIdx",   label:"Reducibility Index (RI)", unit:"%",          stage:"SINTER", min:65,   max:78,   target:72,   tol:3,    lo:55,    hi:88,   sub:"QUALITY"  },
@@ -53,44 +62,34 @@ const SOP = [
   { id:"sinterPbContent",   label:"Sinter Pb Content",       unit:"% Pb",       stage:"SINTER", min:4,    max:8,    target:6,    tol:0.5,  lo:2,     hi:11,   sub:"QUALITY"  },
   { id:"sinterMoisture",    label:"Sinter Moisture",         unit:"% H₂O",      stage:"SINTER", min:0,    max:1.0,  target:0.5,  tol:0.15, lo:0,     hi:2.0,  sub:"QUALITY", lowerBetter:true },
   { id:"sinterFeO",         label:"Sinter FeO Content",      unit:"% FeO",      stage:"SINTER", min:6,    max:10,   target:8,    tol:0.8,  lo:3,     hi:14,   sub:"QUALITY"  },
-  // ── SMELT ──
-  { id:"blastTemp",        label:"Blast Temp",            unit:"°C",        stage:"SMELT",   min:900,   max:1100,  target:1000, tol:25,   lo:850,  hi:1150 },
-  { id:"blastPressure",    label:"Blast Pressure",        unit:" bar",      stage:"SMELT",   min:1.8,   max:2.2,   target:2.0,  tol:0.1,  lo:1.5,  hi:2.5  },
-  { id:"reductionTemp",    label:"Reduction Zone",        unit:"°C",        stage:"SMELT",   min:1200,  max:1300,  target:1250, tol:30,   lo:1150, hi:1350 },
-  { id:"raftTemp",         label:"RAFT Temperature",      unit:"°C",        stage:"SMELT",   min:1900,  max:2100,  target:2000, tol:50,   lo:1800, hi:2200 },
-  { id:"offGasTemp",       label:"Off Gas Temp",          unit:"°C",        stage:"SMELT",   min:150,   max:250,   target:200,  tol:20,   lo:100,  hi:300  },
-  { id:"coCo2Ratio",       label:"CO:CO₂ Ratio",          unit:":1",        stage:"SMELT",   min:1.5,   max:2.5,   target:2.0,  tol:0.2,  lo:1.0,  hi:3.0  },
-  { id:"cokeZincRatio",    label:"Coke:Zinc Ratio",       unit:":1",        stage:"SMELT",   min:1.2,   max:1.8,   target:1.5,  tol:0.15, lo:0.9,  hi:2.1  },
-  { id:"cokeRate",         label:"Coke Rate",             unit:"kg/t HM",   stage:"SMELT",   min:280,   max:320,   target:300,  tol:10,   lo:250,  hi:350, lowerBetter:true },
-  // ── TUYERE ──
-  { id:"tuyereAngle",      label:"Tuyere Angle",          unit:"°",         stage:"TUYERE",  min:10,    max:25,    target:17,   tol:2,    lo:5,    hi:30   },
-  { id:"blastVelocity",    label:"Blast Velocity",        unit:" m/s",      stage:"TUYERE",  min:80,    max:120,   target:100,  tol:8,    lo:60,   hi:140  },
-  { id:"blastInputRate",   label:"Blast Input Rate",      unit:" Nm³/min",  stage:"TUYERE",  min:10,    max:14,    target:12,   tol:1,    lo:8,    hi:16   },
-  // ── COND ──
-  { id:"condInletTemp",    label:"Cond. Inlet Temp",      unit:"°C",        stage:"COND",    min:530,   max:570,   target:550,  tol:15,   lo:480,  hi:620  },
-  { id:"condOutletTemp",   label:"Cond. Outlet Temp",     unit:"°C",        stage:"COND",    min:430,   max:470,   target:450,  tol:15,   lo:380,  hi:520  },
-  { id:"rotorSpeed",       label:"Rotor Speed",           unit:" RPM",      stage:"COND",    min:85,    max:115,   target:100,  tol:8,    lo:60,   hi:140  },
-  { id:"condEfficiency",   label:"Condenser Efficiency",  unit:"%",         stage:"COND",    min:95.6,  max:99.8,  target:98.0, tol:1.0,  lo:90,   hi:100  },
-  { id:"leadSplashTemp",   label:"Lead Splash Temp",      unit:"°C",        stage:"COND",    min:450,   max:550,   target:500,  tol:15,   lo:400,  hi:600  },
-  // ── SLAG ──
-  { id:"slagBasicity",     label:"Slag Basicity (B2)",    unit:" CaO/SiO₂", stage:"SLAG",    min:1.0,   max:1.4,   target:1.2,  tol:0.1,  lo:0.7,  hi:1.8  },
-  { id:"slagTemp",         label:"Slag Temperature",      unit:"°C",        stage:"SLAG",    min:1350,  max:1450,  target:1400, tol:25,   lo:1300, hi:1500 },
-  { id:"slagTapTemp",      label:"Slag Tapping Temp",     unit:"°C",        stage:"SLAG",    min:1100,  max:1200,  target:1150, tol:30,   lo:1050, hi:1250 },
-  { id:"zincInSlag",       label:"Zinc in Slag",          unit:"%Zn",       stage:"SLAG",    min:0,     max:2.0,   target:1.5,  tol:0.25, lo:0,    hi:4,   lowerBetter:true },
+  { id:"blastTemp",         label:"Blast Temp",              unit:"°C",         stage:"SMELT",  min:900,  max:1100, target:1000, tol:25,   lo:850,   hi:1150 },
+  { id:"blastPressure",     label:"Blast Pressure",          unit:" bar",       stage:"SMELT",  min:1.8,  max:2.2,  target:2.0,  tol:0.1,  lo:1.5,   hi:2.5  },
+  { id:"reductionTemp",     label:"Reduction Zone",          unit:"°C",         stage:"SMELT",  min:1200, max:1300, target:1250, tol:30,   lo:1150,  hi:1350 },
+  { id:"raftTemp",          label:"RAFT Temperature",        unit:"°C",         stage:"SMELT",  min:1900, max:2100, target:2000, tol:50,   lo:1800,  hi:2200 },
+  { id:"offGasTemp",        label:"Off Gas Temp",            unit:"°C",         stage:"SMELT",  min:150,  max:250,  target:200,  tol:20,   lo:100,   hi:300  },
+  { id:"coCo2Ratio",        label:"CO:CO₂ Ratio",            unit:":1",         stage:"SMELT",  min:1.5,  max:2.5,  target:2.0,  tol:0.2,  lo:1.0,   hi:3.0  },
+  { id:"cokeZincRatio",     label:"Coke:Zinc Ratio",         unit:":1",         stage:"SMELT",  min:1.2,  max:1.8,  target:1.5,  tol:0.15, lo:0.9,   hi:2.1  },
+  { id:"cokeRate",          label:"Coke Rate",               unit:"kg/t HM",    stage:"SMELT",  min:280,  max:320,  target:300,  tol:10,   lo:250,   hi:350, lowerBetter:true },
+  { id:"tuyereAngle",       label:"Tuyere Angle",            unit:"°",          stage:"TUYERE", min:10,   max:25,   target:17,   tol:2,    lo:5,     hi:30   },
+  { id:"blastVelocity",     label:"Blast Velocity",          unit:" m/s",       stage:"TUYERE", min:80,   max:120,  target:100,  tol:8,    lo:60,    hi:140  },
+  { id:"blastInputRate",    label:"Blast Input Rate",        unit:" Nm³/min",   stage:"TUYERE", min:10,   max:14,   target:12,   tol:1,    lo:8,     hi:16   },
+  { id:"condInletTemp",     label:"Cond. Inlet Temp",        unit:"°C",         stage:"COND",   min:530,  max:570,  target:550,  tol:15,   lo:480,   hi:620  },
+  { id:"condOutletTemp",    label:"Cond. Outlet Temp",       unit:"°C",         stage:"COND",   min:430,  max:470,  target:450,  tol:15,   lo:380,   hi:520  },
+  { id:"rotorSpeed",        label:"Rotor Speed",             unit:" RPM",       stage:"COND",   min:85,   max:115,  target:100,  tol:8,    lo:60,    hi:140  },
+  { id:"condEfficiency",    label:"Condenser Efficiency",    unit:"%",          stage:"COND",   min:95.6, max:99.8, target:98.0, tol:1.0,  lo:90,    hi:100  },
+  { id:"leadSplashTemp",    label:"Lead Splash Temp",        unit:"°C",         stage:"COND",   min:450,  max:550,  target:500,  tol:15,   lo:400,   hi:600  },
+  { id:"slagBasicity",      label:"Slag Basicity (B2)",      unit:" CaO/SiO₂",  stage:"SLAG",   min:1.0,  max:1.4,  target:1.2,  tol:0.1,  lo:0.7,   hi:1.8  },
+  { id:"slagTemp",          label:"Slag Temperature",        unit:"°C",         stage:"SLAG",   min:1350, max:1450, target:1400, tol:25,   lo:1300,  hi:1500 },
+  { id:"slagTapTemp",       label:"Slag Tapping Temp",       unit:"°C",         stage:"SLAG",   min:1100, max:1200, target:1150, tol:30,   lo:1050,  hi:1250 },
+  { id:"zincInSlag",        label:"Zinc in Slag",            unit:"%Zn",        stage:"SLAG",   min:0,    max:2.0,  target:1.5,  tol:0.25, lo:0,     hi:4,   lowerBetter:true },
 ];
 
-const FEED_PROFILES = {
-  "High-Grade Concentrate":  { znContent:52, gangue:6,  sulfur:0.8, moisture:4  },
-  "Standard Mixed Feed":     { znContent:45, gangue:10, sulfur:1.2, moisture:6  },
-  "Low-Grade / High Gangue": { znContent:38, gangue:18, sulfur:1.6, moisture:8  },
-  "Recycled / Secondary":    { znContent:40, gangue:15, sulfur:2.0, moisture:7  },
+const FEED_PROFILES: Record<string, { znContent:number; gangue:number; sulfur:number; moisture:number }> = {
+  "High-Grade Concentrate":  { znContent:52, gangue:6,  sulfur:0.8, moisture:4 },
+  "Standard Mixed Feed":     { znContent:45, gangue:10, sulfur:1.2, moisture:6 },
+  "Low-Grade / High Gangue": { znContent:38, gangue:18, sulfur:1.6, moisture:8 },
+  "Recycled / Secondary":    { znContent:40, gangue:15, sulfur:2.0, moisture:7 },
 };
-
-interface SOPParam {
-  id: string; label: string; unit: string; stage: string;
-  min: number; max: number; target: number; tol: number;
-  lo: number; hi: number; sub?: string; lowerBetter?: boolean;
-}
 
 function clamp(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
 function rand(v: number, s: number): number { return v + (Math.random() - 0.5) * s * 2; }
@@ -106,10 +105,10 @@ function getStatus(p: SOPParam, v: number): "optimal" | "warning" | "critical" {
   return "critical";
 }
 
-const STATUS = {
-  optimal:  { label: "IN RANGE",    color: T.green  },
-  warning:  { label: "WARNING",     color: T.amber  },
-  critical: { label: "OUT OF SPEC", color: T.red    },
+const STATUS: Record<string, { label: string; color: string }> = {
+  optimal:  { label: "IN RANGE",    color: T.green },
+  warning:  { label: "WARNING",     color: T.amber },
+  critical: { label: "OUT OF SPEC", color: T.red   },
 };
 
 function genHistory(target: number, spread: number, n: number = 20): { t: string; v: number }[] {
@@ -125,7 +124,7 @@ const Card = ({ children, style = {} }: { children: React.ReactNode; style?: Rea
   </div>
 );
 
-const Badge = ({ label, color, small }) => (
+const Badge = ({ label, color, small }: { label: string; color: string; small?: boolean }) => (
   <span style={{
     display: "inline-block", padding: small ? "1px 7px" : "2px 9px", borderRadius: 3,
     border: `1px solid ${color}44`, background: `${color}14`, color,
@@ -134,12 +133,12 @@ const Badge = ({ label, color, small }) => (
   }}>{label}</span>
 );
 
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 12px" }}>
       <p style={{ fontFamily: "monospace", fontSize: 10, color: T.label, marginBottom: 4 }}>{label}</p>
-      {payload.map((p, i) => (
+      {payload.map((p: any, i: number) => (
         <p key={i} style={{ fontFamily: "monospace", fontSize: 11, color: p.color || T.amber, margin: "2px 0" }}>
           {p.name}: <strong>{typeof p.value === "number" ? p.value.toFixed(2) : p.value}</strong>
         </p>
@@ -148,7 +147,10 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-function KPICard({ p, value, history, selected, onSelect }) {
+function KPICard({ p, value, history, selected, onSelect }: {
+  p: SOPParam; value: number; history: { t: string; v: number }[];
+  selected: boolean; onSelect: (id: string) => void;
+}) {
   const status = getStatus(p, value);
   const sc     = STATUS[status].color;
   const pct    = clamp(((value - p.lo) / (p.hi - p.lo)) * 100, 0, 100);
@@ -212,12 +214,12 @@ function KPICard({ p, value, history, selected, onSelect }) {
   );
 }
 
-function OverviewTab({ live, hist }) {
+function OverviewTab({ live, hist }: { live: Record<string, number>; hist: Record<string, { t: string; v: number }[]> }) {
   const [sel, setSel] = useState("blastTemp");
   const [stageFilter, setStageFilter] = useState("ALL");
   const selP = SOP.find(p => p.id === sel);
   const selH = hist[sel] || [];
-  const counts = SOP.reduce((a, p) => {
+  const counts = SOP.reduce((a: Record<string, number>, p) => {
     const s = getStatus(p, live[p.id]);
     a[s] = (a[s] || 0) + 1;
     return a;
@@ -225,19 +227,15 @@ function OverviewTab({ live, hist }) {
 
   const stages = ["ALL", "SINTER", "SMELT", "TUYERE", "COND", "SLAG"];
   const filteredSOP = stageFilter === "ALL" ? SOP : SOP.filter(p => p.stage === stageFilter);
-
-  // Group by stage, then optionally by sub-group
-  const groupedSOP = stages.slice(1).reduce((acc, stage) => {
+  const groupedSOP = stages.slice(1).reduce((acc: Record<string, SOPParam[]>, stage) => {
     const items = filteredSOP.filter(p => p.stage === stage);
     if (items.length) acc[stage] = items;
     return acc;
   }, {});
-
-  const SUB_CLR = { THERMAL: T.red, PROCESS: T.blue, QUALITY: T.teal };
+  const SUB_CLR: Record<string, string> = { THERMAL: T.red, PROCESS: T.blue, QUALITY: T.teal };
 
   return (
     <div>
-      {/* Summary row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
         {[
           { label: "In Range",    count: counts.optimal,  color: T.green },
@@ -252,7 +250,6 @@ function OverviewTab({ live, hist }) {
         ))}
       </div>
 
-      {/* Stage filter bar */}
       <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
         {stages.map(st => {
           const stCount = st === "ALL" ? SOP.length : SOP.filter(p => p.stage === st).length;
@@ -264,8 +261,7 @@ function OverviewTab({ live, hist }) {
               border: `1px solid ${active ? stColor : stColor + "44"}`,
               background: active ? stColor + "22" : "transparent",
               color: active ? stColor : stColor + "99",
-              fontFamily: "monospace", fontSize: 10, letterSpacing: 1.2,
-              transition: "all .15s",
+              fontFamily: "monospace", fontSize: 10, letterSpacing: 1.2, transition: "all .15s",
             }}>
               {st} <span style={{ opacity: 0.7 }}>({stCount})</span>
             </button>
@@ -273,54 +269,45 @@ function OverviewTab({ live, hist }) {
         })}
       </div>
 
-      {/* KPI Cards grouped by stage, with SINTER sub-groups */}
       {Object.entries(groupedSOP).map(([stage, params]) => {
         const stColor = STAGE_CLR[stage];
-        const hasSubs = params.some(p => p.sub);
-
+        const hasSubs = params.some((p: SOPParam) => p.sub);
         return (
           <div key={stage} style={{ marginBottom: 22 }}>
-            {/* Stage header */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <div style={{ width: 10, height: 10, borderRadius: 2, background: stColor, flexShrink: 0, boxShadow: `0 0 8px ${stColor}88` }} />
               <span style={{ fontFamily: "monospace", fontSize: 9, letterSpacing: 2, color: stColor, textTransform: "uppercase" }}>{stage} STAGE</span>
               <span style={{ fontFamily: "monospace", fontSize: 9, color: T.sub }}>· {params.length} parameters</span>
               <div style={{ flex: 1, height: 1, background: stColor + "22" }} />
             </div>
-
-            {hasSubs ? (
-              // Render sub-groups for SINTER
-              (() => {
-                const subGroups = params.reduce((acc, p) => {
-                  const key = p.sub || "OTHER";
-                  if (!acc[key]) acc[key] = [];
-                  acc[key].push(p);
-                  return acc;
-                }, {});
-                return Object.entries(subGroups).map(([sub, subParams]) => {
-                  const subColor = SUB_CLR[sub] || T.label;
-                  return (
-                    <div key={sub} style={{ marginBottom: 16 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, paddingLeft: 4 }}>
-                        <div style={{ width: 3, height: 12, borderRadius: 2, background: subColor, flexShrink: 0 }} />
-                        <span style={{ fontFamily: "monospace", fontSize: 8, letterSpacing: 1.8, color: subColor, textTransform: "uppercase", opacity: 0.85 }}>
-                          {sub}
-                        </span>
-                        <div style={{ flex: 1, height: 1, background: subColor + "18" }} />
-                        <span style={{ fontFamily: "monospace", fontSize: 8, color: T.sub }}>{subParams.length}</span>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
-                        {subParams.map(p => (
-                          <KPICard key={p.id} p={p} value={live[p.id]} history={hist[p.id] || []} selected={sel === p.id} onSelect={setSel} />
-                        ))}
-                      </div>
+            {hasSubs ? (() => {
+              const subGroups = params.reduce((acc: Record<string, SOPParam[]>, p: SOPParam) => {
+                const key = p.sub || "OTHER";
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(p);
+                return acc;
+              }, {});
+              return Object.entries(subGroups).map(([sub, subParams]) => {
+                const subColor = SUB_CLR[sub] || T.label;
+                return (
+                  <div key={sub} style={{ marginBottom: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, paddingLeft: 4 }}>
+                      <div style={{ width: 3, height: 12, borderRadius: 2, background: subColor, flexShrink: 0 }} />
+                      <span style={{ fontFamily: "monospace", fontSize: 8, letterSpacing: 1.8, color: subColor, textTransform: "uppercase", opacity: 0.85 }}>{sub}</span>
+                      <div style={{ flex: 1, height: 1, background: subColor + "18" }} />
+                      <span style={{ fontFamily: "monospace", fontSize: 8, color: T.sub }}>{subParams.length}</span>
                     </div>
-                  );
-                });
-              })()
-            ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
+                      {subParams.map((p: SOPParam) => (
+                        <KPICard key={p.id} p={p} value={live[p.id]} history={hist[p.id] || []} selected={sel === p.id} onSelect={setSel} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              });
+            })() : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
-                {params.map(p => (
+                {params.map((p: SOPParam) => (
                   <KPICard key={p.id} p={p} value={live[p.id]} history={hist[p.id] || []} selected={sel === p.id} onSelect={setSel} />
                 ))}
               </div>
@@ -329,14 +316,13 @@ function OverviewTab({ live, hist }) {
         );
       })}
 
-      {/* Detail trend chart */}
       {selP && (
         <Card style={{ marginTop: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div>
               <h3 style={{ fontSize: 15, fontWeight: 700, color: T.text, margin: 0 }}>{selP.label} — 24h Trend</h3>
               <p style={{ fontFamily: "monospace", fontSize: 10, color: T.label, marginTop: 4 }}>
-                SOP: {selP.min}–{selP.max}{selP.unit}  |  Tol: ±{selP.tol}{selP.unit}
+                SOP: {selP.min}–{selP.max}{selP.unit} | Tol: ±{selP.tol}{selP.unit}
                 {selP.sub && <span style={{ marginLeft: 10, color: SUB_CLR[selP.sub] || T.label }}>· {selP.sub}</span>}
               </p>
             </div>
@@ -350,7 +336,7 @@ function OverviewTab({ live, hist }) {
               <defs>
                 <linearGradient id="dg" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor={STATUS[getStatus(selP, live[selP.id])].color} stopOpacity={0.28} />
-                  <stop offset="95%" stopColor={STATUS[getStatus(selP, live[selP.id])].color} stopOpacity={0}    />
+                  <stop offset="95%" stopColor={STATUS[getStatus(selP, live[selP.id])].color} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
@@ -371,116 +357,108 @@ function OverviewTab({ live, hist }) {
   );
 }
 
-function buildRecs(ctrl) {
-  const recs = [];
-  if (ctrl.blastTemp < 900)        recs.push({ param:"blastTemp",      sev:"critical", icon:"🌡️", title:"Blast Temp Too Low",       body:`Current: ${ctrl.blastTemp}°C. Increase to 900-1100°C.`,             suggested:1000 });
-  else if (ctrl.blastTemp > 1100)  recs.push({ param:"blastTemp",      sev:"critical", icon:"🔥", title:"Blast Temp Too High",       body:`Current: ${ctrl.blastTemp}°C. Reduce to 900-1100°C.`,              suggested:1000 });
-  else if (ctrl.blastTemp > 1080)  recs.push({ param:"blastTemp",      sev:"warning",  icon:"🔥", title:"Blast Temp Elevated",       body:`Current: ${ctrl.blastTemp}°C. Consider reducing to 1000-1050°C.`, suggested:1050 });
-  if (ctrl.blastPressure < 1.8)    recs.push({ param:"blastPressure",  sev:"warning",  icon:"💨", title:"Blast Pressure Low",        body:`Current: ${ctrl.blastPressure} bar. Increase to 1.8-2.2 bar.`,    suggested:2.0  });
-  else if (ctrl.blastPressure>2.2) recs.push({ param:"blastPressure",  sev:"warning",  icon:"⚠️", title:"Blast Pressure High",       body:`Current: ${ctrl.blastPressure} bar. Reduce to 1.8-2.2 bar.`,     suggested:2.0  });
-  if (ctrl.cokeSinterRatio > 4.0)  recs.push({ param:"cokeSinterRatio",sev:"warning",  icon:"🪨", title:"High Coke:Sinter Ratio",    body:`Current: 1:${ctrl.cokeSinterRatio.toFixed(1)}. Reduce to 1:3-4.`, suggested:3.5  });
-  else if (ctrl.cokeSinterRatio<3) recs.push({ param:"cokeSinterRatio",sev:"warning",  icon:"🪨", title:"Low Coke:Sinter Ratio",     body:`Current: 1:${ctrl.cokeSinterRatio.toFixed(1)}. Increase.`,         suggested:3.5  });
-  if (ctrl.leadSplashTemp < 450)   recs.push({ param:"leadSplashTemp", sev:"critical", icon:"💧", title:"Lead Splash Temp Critical", body:`Current: ${ctrl.leadSplashTemp}°C. Increase to 450-550°C.`,        suggested:500  });
-  else if(ctrl.leadSplashTemp>550) recs.push({ param:"leadSplashTemp", sev:"warning",  icon:"🔥", title:"Lead Splash Temp High",     body:`Current: ${ctrl.leadSplashTemp}°C. Reduce to 450-550°C.`,         suggested:500  });
-  if (ctrl.cokeRate > 320)         recs.push({ param:"cokeRate",       sev:"warning",  icon:"⚡", title:"High Coke Consumption",     body:`Current: ${ctrl.cokeRate} kg/t. Reduce to 280-320 kg/t.`,         suggested:300  });
-  else if (ctrl.cokeRate < 280)    recs.push({ param:"cokeRate",       sev:"warning",  icon:"⚡", title:"Coke Rate Too Low",         body:`Current: ${ctrl.cokeRate} kg/t. Increase to 280-320 kg/t.`,       suggested:300  });
-  if (ctrl.sContent > 2.0)         recs.push({ param:"sContent",       sev:"critical", icon:"☣️", title:"High Sulfur Content",       body:`Current: ${ctrl.sContent}% S. Reduce to <2.0%.`,                  suggested:1.2  });
+interface CtrlParams {
+  blastTemp: number; blastPressure: number; cokeSinterRatio: number;
+  leadSplashTemp: number; cokeRate: number; preheatTemp: number;
+  oxygenEnrichment: number; znContent: number; pbContent: number;
+  caoContent: number; sio2Content: number; al2o3Content: number;
+  sContent: number; zincInSlag: number; slagTemp: number;
+  slagBasicity?: number; condEfficiency?: number;
+  [key: string]: number | undefined;
+}
+
+function buildRecs(ctrl: CtrlParams) {
+  const recs: { param?: string; sev: string; icon: string; title: string; body: string; suggested?: number }[] = [];
+  if (ctrl.blastTemp < 900)         recs.push({ param:"blastTemp",      sev:"critical", icon:"🌡️", title:"Blast Temp Too Low",       body:`Current: ${ctrl.blastTemp}°C. Increase to 900-1100°C.`,             suggested:1000 });
+  else if (ctrl.blastTemp > 1100)   recs.push({ param:"blastTemp",      sev:"critical", icon:"🔥", title:"Blast Temp Too High",       body:`Current: ${ctrl.blastTemp}°C. Reduce to 900-1100°C.`,              suggested:1000 });
+  else if (ctrl.blastTemp > 1080)   recs.push({ param:"blastTemp",      sev:"warning",  icon:"🔥", title:"Blast Temp Elevated",       body:`Current: ${ctrl.blastTemp}°C. Consider reducing to 1000-1050°C.`, suggested:1050 });
+  if (ctrl.blastPressure < 1.8)     recs.push({ param:"blastPressure",  sev:"warning",  icon:"💨", title:"Blast Pressure Low",        body:`Current: ${ctrl.blastPressure} bar. Increase to 1.8-2.2 bar.`,    suggested:2.0  });
+  else if (ctrl.blastPressure > 2.2)recs.push({ param:"blastPressure",  sev:"warning",  icon:"⚠️", title:"Blast Pressure High",       body:`Current: ${ctrl.blastPressure} bar. Reduce to 1.8-2.2 bar.`,     suggested:2.0  });
+  if (ctrl.cokeSinterRatio > 4.0)   recs.push({ param:"cokeSinterRatio",sev:"warning",  icon:"🪨", title:"High Coke:Sinter Ratio",    body:`Current: 1:${ctrl.cokeSinterRatio.toFixed(1)}. Reduce to 1:3-4.`, suggested:3.5  });
+  else if (ctrl.cokeSinterRatio < 3)recs.push({ param:"cokeSinterRatio",sev:"warning",  icon:"🪨", title:"Low Coke:Sinter Ratio",     body:`Current: 1:${ctrl.cokeSinterRatio.toFixed(1)}. Increase.`,         suggested:3.5  });
+  if (ctrl.leadSplashTemp < 450)    recs.push({ param:"leadSplashTemp", sev:"critical", icon:"💧", title:"Lead Splash Temp Critical", body:`Current: ${ctrl.leadSplashTemp}°C. Increase to 450-550°C.`,        suggested:500  });
+  else if (ctrl.leadSplashTemp > 550)recs.push({ param:"leadSplashTemp",sev:"warning",  icon:"🔥", title:"Lead Splash Temp High",     body:`Current: ${ctrl.leadSplashTemp}°C. Reduce to 450-550°C.`,         suggested:500  });
+  if (ctrl.cokeRate > 320)          recs.push({ param:"cokeRate",       sev:"warning",  icon:"⚡", title:"High Coke Consumption",     body:`Current: ${ctrl.cokeRate} kg/t. Reduce to 280-320 kg/t.`,         suggested:300  });
+  else if (ctrl.cokeRate < 280)     recs.push({ param:"cokeRate",       sev:"warning",  icon:"⚡", title:"Coke Rate Too Low",         body:`Current: ${ctrl.cokeRate} kg/t. Increase to 280-320 kg/t.`,       suggested:300  });
+  if (ctrl.sContent > 2.0)          recs.push({ param:"sContent",       sev:"critical", icon:"☣️", title:"High Sulfur Content",       body:`Current: ${ctrl.sContent}% S. Reduce to <2.0%.`,                  suggested:1.2  });
   if (recs.length === 0) recs.push({ sev:"optimal", icon:"✅", title:"All Parameters Optimal", body:"All control inputs within SOP. Maintain current conditions." });
   return recs;
 }
 
-function calcPredicted(ctrl) {
+function calcPredicted(ctrl: CtrlParams) {
   const bf = (ctrl.blastTemp - 900) / 200;
   const cf = (ctrl.cokeRate - 300) / 20;
   const pf = (ctrl.blastPressure - 1.8) / 0.4;
-  const znProd   = Math.round(820 + bf * 25 - cf * 15 + pf * 10);
-  const znRecov  = parseFloat(clamp(94 - (ctrl.zincInSlag || 1.5) * 2 + bf * 1.5, 88, 99).toFixed(1));
-  const energyEf = parseFloat(clamp(82 - cf * 2 + bf * 1.2, 72, 96).toFixed(1));
-  const slagBas  = parseFloat(clamp((ctrl.slagBasicity || 1.2) * 0.98 + 0.01, 1.0, 1.6).toFixed(2));
-  const condEff  = parseFloat(clamp((ctrl.condEfficiency || 98) * 0.995 + 0.2, 95, 99.8).toFixed(1));
-  const blastUtil= parseFloat(clamp(88 + pf * 3 - cf * 1, 78, 98).toFixed(1));
-  const leadFlow = parseFloat(clamp(420 + bf * 15 + pf * 8, 380, 480).toFixed(0));
   return {
-    cokeRate:     parseFloat((ctrl.cokeRate * 0.97).toFixed(1)),
-    zincInSlag:   parseFloat(((ctrl.zincInSlag || 1.5) * 0.95).toFixed(2)),
-    slagTemp:     Math.round((ctrl.slagTemp || 1400) * 1.005),
-    znProduction: znProd,
-    znRecovery:   znRecov,
-    energyEff:    energyEf,
-    slagBasicity: slagBas,
-    condEfficiency: condEff,
-    blastUtilisation: blastUtil,
-    leadFlow:     parseFloat(leadFlow),
+    cokeRate:          parseFloat((ctrl.cokeRate * 0.97).toFixed(1)),
+    zincInSlag:        parseFloat((ctrl.zincInSlag * 0.95).toFixed(2)),
+    slagTemp:          Math.round(ctrl.slagTemp * 1.005),
+    znProduction:      Math.round(820 + bf * 25 - cf * 15 + pf * 10),
+    znRecovery:        parseFloat(clamp(94 - ctrl.zincInSlag * 2 + bf * 1.5, 88, 99).toFixed(1)),
+    energyEff:         parseFloat(clamp(82 - cf * 2 + bf * 1.2, 72, 96).toFixed(1)),
+    slagBasicity:      parseFloat(clamp((ctrl.slagBasicity || 1.2) * 0.98 + 0.01, 1.0, 1.6).toFixed(2)),
+    condEfficiency:    parseFloat(clamp((ctrl.condEfficiency || 98) * 0.995 + 0.2, 95, 99.8).toFixed(1)),
+    blastUtilisation:  parseFloat(clamp(88 + pf * 3 - cf * 1, 78, 98).toFixed(1)),
+    leadFlow:          parseFloat(clamp(420 + bf * 15 + pf * 8, 380, 480).toFixed(0)),
   };
 }
 
-function genActualVsPredicted(actual, predicted, n = 24) {
-  // Keep predicted within tight range of actual (~2-4% variance)
+function genActualVsPredicted(actual: number, predicted: number, n: number = 24): { t: string; actual: number; predicted: number }[] {
   const spread = Math.abs(actual) * 0.025;
-  return Array.from({ length: n }, (_, i) => {
-    const hr = i + 1;
-    const actNoise  = (Math.random() - 0.5) * spread * 2;
-    const predNoise = (Math.random() - 0.5) * spread * 1.4;
-    return {
-      t:         `${hr.toString().padStart(2,"0")}:00`,
-      actual:    parseFloat((actual  + actNoise).toFixed(typeof actual === "number" && actual < 10 ? 2 : 1)),
-      predicted: parseFloat((predicted + predNoise).toFixed(typeof predicted === "number" && predicted < 10 ? 2 : 1)),
-    };
-  });
+  return Array.from({ length: n }, (_, i) => ({
+    t:         `${(i + 1).toString().padStart(2, "0")}:00`,
+    actual:    parseFloat((actual    + (Math.random() - 0.5) * spread * 2).toFixed(actual < 10 ? 2 : 1)),
+    predicted: parseFloat((predicted + (Math.random() - 0.5) * spread * 1.4).toFixed(predicted < 10 ? 2 : 1)),
+  }));
 }
 
-function RecommendationsTab({ currentParams }) {
-  const defaultParams = {
+function RecommendationsTab({ currentParams }: { currentParams?: Partial<CtrlParams> }) {
+  const defaultParams: CtrlParams = {
     blastTemp:1090, blastPressure:1.75, cokeSinterRatio:4.2,
     leadSplashTemp:500, cokeRate:300, preheatTemp:800,
     oxygenEnrichment:23, znContent:45, pbContent:5,
     caoContent:10, sio2Content:22, al2o3Content:6,
     sContent:1.2, zincInSlag:1.5, slagTemp:1150,
   };
-  const [ctrl, setCtrl]                     = useState(currentParams || defaultParams);
-  useEffect(() => { if (currentParams) setCtrl(currentParams); }, [currentParams]);
+  const [ctrl, setCtrl] = useState<CtrlParams>(currentParams as CtrlParams || defaultParams);
+  useEffect(() => { if (currentParams) setCtrl(currentParams as CtrlParams); }, [currentParams]);
 
-  const [rejectionReasons, setRejectionReasons] = useState({});
-  const [acceptedRecs, setAcceptedRecs]         = useState({});
-  const [dismissedRecs, setDismissedRecs]       = useState({});
-  const [selectedOutput, setSelectedOutput]     = useState(null);
-  const [chartData, setChartData]               = useState(null);
-  const chartRef = useRef(null);
+  const [rejectionReasons, setRejectionReasons] = useState<Record<number, string>>({});
+  const [acceptedRecs, setAcceptedRecs]         = useState<Record<number, boolean>>({});
+  const [dismissedRecs, setDismissedRecs]       = useState<Record<number, boolean>>({});
+  const [selectedOutput, setSelectedOutput]     = useState<any>(null);
+  const [chartData, setChartData]               = useState<any[]|null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
 
-  const recs    = buildRecs(ctrl);
-  const pred    = calcPredicted(ctrl);
-  const sevClr  = { critical: T.red, warning: T.amber, optimal: T.green };
+  const recs   = buildRecs(ctrl);
+  const pred   = calcPredicted(ctrl);
+  const sevClr: Record<string, string> = { critical: T.red, warning: T.amber, optimal: T.green };
 
   const OUTPUTS = [
-    { key:"znProduction",      label:"Zn Production",     unit:" t/d",     actual: 820,                        color: T.green,   target:"≥820 t/d",    icon:"⚗️" },
-    { key:"znRecovery",        label:"Zinc Recovery",      unit:"%",        actual: 93.2,                       color: T.teal,    target:"≥94%",         icon:"♻️" },
-    { key:"cokeRate",          label:"Coke Rate",          unit:" kg/t HM", actual: ctrl.cokeRate  || 300,      color: T.amber,   target:"280–320",      icon:"🪨" },
-    { key:"zincInSlag",        label:"Zinc in Slag",       unit:"% Zn",     actual: ctrl.zincInSlag || 1.5,     color: T.violet,  target:"<2.0% Zn",     icon:"🔩" },
-    { key:"slagTemp",          label:"Slag Temperature",   unit:"°C",       actual: ctrl.slagTemp   || 1150,    color: T.red,     target:"1350–1450°C",  icon:"🌡️" },
-    { key:"energyEff",         label:"Energy Efficiency",  unit:"",         actual: 81.4,                       color: T.blue,    target:"≥80",          icon:"⚡" },
-    { key:"slagBasicity",      label:"Slag Basicity",      unit:" B2",      actual: ctrl.slagBasicity || 1.2,   color: T.orange,  target:"1.0–1.4",      icon:"⚖️" },
-    { key:"condEfficiency",    label:"Cond. Efficiency",   unit:"%",        actual: ctrl.condEfficiency || 98,  color: "#8aaac8", target:"95.6–99.8%",   icon:"❄️" },
-    { key:"blastUtilisation",  label:"Blast Utilisation",  unit:"%",        actual: 87.5,                       color: "#a78bfa", target:"≥85%",         icon:"💨" },
-    { key:"leadFlow",          label:"Lead Flow Rate",     unit:" t/h",     actual: 425,                        color: "#94a3b8", target:"380–480 t/h",  icon:"🔘" },
+    { key:"znProduction",     label:"Zn Production",    unit:" t/d",     actual:820,                        color:T.green,   target:"≥820 t/d",   icon:"⚗️" },
+    { key:"znRecovery",       label:"Zinc Recovery",     unit:"%",        actual:93.2,                       color:T.teal,    target:"≥94%",        icon:"♻️" },
+    { key:"cokeRate",         label:"Coke Rate",         unit:" kg/t HM", actual:ctrl.cokeRate||300,         color:T.amber,   target:"280–320",     icon:"🪨" },
+    { key:"zincInSlag",       label:"Zinc in Slag",      unit:"% Zn",     actual:ctrl.zincInSlag||1.5,       color:T.violet,  target:"<2.0% Zn",    icon:"🔩" },
+    { key:"slagTemp",         label:"Slag Temperature",  unit:"°C",       actual:ctrl.slagTemp||1150,        color:T.red,     target:"1350–1450°C", icon:"🌡️" },
+    { key:"energyEff",        label:"Energy Efficiency", unit:"",         actual:81.4,                       color:T.blue,    target:"≥80",         icon:"⚡" },
+    { key:"slagBasicity",     label:"Slag Basicity",     unit:" B2",      actual:ctrl.slagBasicity||1.2,     color:T.orange,  target:"1.0–1.4",     icon:"⚖️" },
+    { key:"condEfficiency",   label:"Cond. Efficiency",  unit:"%",        actual:ctrl.condEfficiency||98,    color:"#8aaac8", target:"95.6–99.8%",  icon:"❄️" },
+    { key:"blastUtilisation", label:"Blast Utilisation", unit:"%",        actual:87.5,                       color:"#a78bfa", target:"≥85%",        icon:"💨" },
+    { key:"leadFlow",         label:"Lead Flow Rate",    unit:" t/h",     actual:425,                        color:"#94a3b8", target:"380–480 t/h", icon:"🔘" },
   ];
 
-  const handleOutputClick = (out) => {
-    const predVal = pred[out.key];
+  const handleOutputClick = (out: any) => {
+    const predVal = (pred as any)[out.key];
     if (predVal === undefined) return;
     if (selectedOutput?.key === out.key) { setSelectedOutput(null); setChartData(null); return; }
     setChartData(genActualVsPredicted(out.actual, predVal, 24));
     setSelectedOutput(out);
-    setTimeout(() => chartRef.current?.scrollIntoView({ behavior:"smooth", block:"start" }), 80);
+    setTimeout(() => chartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
   };
 
-  const znVsCokeData = Array.from({ length: 15 }, (_, i) => {
-    const cr = 260 + i * 8;
-    return { cokeRate: cr, zincInSlag: parseFloat(clamp(2.8 - (cr - 260) / 50, 0.5, 3.5).toFixed(2)) };
-  });
-
-  const handleAccept = (rec, i) => {
+  const handleAccept = (rec: any, i: number) => {
     if (rec.suggested !== undefined && rec.param) {
-      setCtrl(p => ({ ...p, [rec.param]: rec.suggested }));
+      setCtrl((p: CtrlParams) => ({ ...p, [rec.param]: rec.suggested }));
       setAcceptedRecs(p => ({ ...p, [i]: true }));
       setTimeout(() => {
         setDismissedRecs(p => ({ ...p, [i]: true }));
@@ -489,9 +467,8 @@ function RecommendationsTab({ currentParams }) {
     }
   };
 
-  const handleReject = (i) => {
-    const reason = rejectionReasons[i];
-    if (reason?.trim()) {
+  const handleReject = (i: number) => {
+    if (rejectionReasons[i]?.trim()) {
       setRejectionReasons(p => ({ ...p, [i]: "" }));
       setDismissedRecs(p => ({ ...p, [i]: true }));
     } else {
@@ -499,12 +476,14 @@ function RecommendationsTab({ currentParams }) {
     }
   };
 
+  const znVsCokeData = Array.from({ length: 15 }, (_, i) => {
+    const cr = 260 + i * 8;
+    return { cokeRate: cr, zincInSlag: parseFloat(clamp(2.8 - (cr - 260) / 50, 0.5, 3.5).toFixed(2)) };
+  });
+
   return (
     <div>
-      {/* ── Two-column layout ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 14, marginBottom: 14 }}>
-
-        {/* LEFT: existing charts + recs */}
         <div>
           <Card style={{ marginBottom: 14 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>Zinc in Slag vs Coke Rate</h3>
@@ -534,8 +513,8 @@ function RecommendationsTab({ currentParams }) {
                 <YAxis stroke={T.sub} tick={{ fill:T.sub, fontSize:9 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ fontSize:11, color:T.label }} />
-                <Bar dataKey="current"   name="Current"   fill={T.blue}  fillOpacity={0.75} radius={[4,4,0,0]} />
-                <Bar dataKey="predicted" name="Predicted" fill={T.amber} fillOpacity={0.85} radius={[4,4,0,0]} />
+                <Bar dataKey="current"   name="Current"   fill={T.blue}  fillOpacity={0.75} radius={[4,4,0,0] as any} />
+                <Bar dataKey="predicted" name="Predicted" fill={T.amber} fillOpacity={0.85} radius={[4,4,0,0] as any} />
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -567,11 +546,7 @@ function RecommendationsTab({ currentParams }) {
                   <input type="text" placeholder="Rejection reason..."
                     value={rejectionReasons[i] || ""}
                     onChange={e => setRejectionReasons(p => ({ ...p, [i]: e.target.value }))}
-                    style={{
-                      flex:1, minWidth:"200px", padding:"6px 10px", borderRadius:5,
-                      border:`1px solid ${T.border}`, background:T.surface, color:T.text,
-                      fontSize:11, fontFamily:"monospace",
-                    }}
+                    style={{ flex:1, minWidth:"200px", padding:"6px 10px", borderRadius:5, border:`1px solid ${T.border}`, background:T.surface, color:T.text, fontSize:11, fontFamily:"monospace" }}
                   />
                 </div>
               )}
@@ -579,7 +554,6 @@ function RecommendationsTab({ currentParams }) {
           ))}
         </div>
 
-        {/* RIGHT: control params + clickable predicted outputs */}
         <div>
           <p style={{ fontFamily:"monospace", fontSize:9, color:T.label, letterSpacing:2, textTransform:"uppercase", marginBottom:12 }}>Current Control Parameters</p>
           {[
@@ -606,27 +580,21 @@ function RecommendationsTab({ currentParams }) {
             Predicted Outputs <span style={{ color:T.sub, fontWeight:400 }}>— click to view chart</span>
           </p>
           {OUTPUTS.map(out => {
-            const predVal  = pred[out.key];
+            const predVal  = (pred as any)[out.key];
             const isActive = selectedOutput?.key === out.key;
-            const diff     = predVal !== undefined
-              ? parseFloat(((predVal - out.actual) / Math.abs(out.actual) * 100).toFixed(1))
-              : null;
+            const diff     = predVal !== undefined ? parseFloat(((predVal - out.actual) / Math.abs(out.actual) * 100).toFixed(1)) : null;
             return (
               <div key={out.key} onClick={() => handleOutputClick(out)} style={{
-                display:"flex", alignItems:"center", gap:10,
-                marginBottom:6, padding:"9px 12px", borderRadius:8, cursor:"pointer",
+                display:"flex", alignItems:"center", gap:10, marginBottom:6, padding:"9px 12px", borderRadius:8, cursor:"pointer",
                 background: isActive ? `${out.color}14` : T.card,
                 border:`1px solid ${isActive ? out.color : T.border}`,
-                borderLeft:`3px solid ${out.color}`,
-                transition:"all .15s",
+                borderLeft:`3px solid ${out.color}`, transition:"all .15s",
               }}>
                 <span style={{ fontSize:14 }}>{out.icon}</span>
                 <span style={{ fontSize:11, color:T.label, flex:1 }}>{out.label}</span>
                 <div style={{ textAlign:"right" }}>
                   <div style={{ fontFamily:"monospace", fontSize:13, fontWeight:700, color:out.color }}>
-                    {predVal !== undefined
-                      ? (predVal < 10 ? predVal.toFixed(2) : predVal.toFixed(1))
-                      : "—"}{out.unit}
+                    {predVal !== undefined ? (predVal < 10 ? predVal.toFixed(2) : predVal.toFixed(1)) : "—"}{out.unit}
                   </div>
                   {diff !== null && (
                     <div style={{ fontFamily:"monospace", fontSize:9, color: diff >= 0 ? T.green : T.red }}>
@@ -641,32 +609,25 @@ function RecommendationsTab({ currentParams }) {
         </div>
       </div>
 
-      {/* ── Full-width Actual vs Predicted chart (appears on click) ── */}
       {selectedOutput && chartData && (() => {
-        const predVal   = pred[selectedOutput.key];
-        const actVal    = selectedOutput.actual;
-        const pct       = predVal !== undefined && actVal
-          ? parseFloat(((predVal - actVal) / Math.abs(actVal) * 100).toFixed(1))
-          : 0;
-        const allVals   = chartData.flatMap(d => [d.actual, d.predicted]).filter(v => !isNaN(v));
-        const dMin      = Math.min(...allVals);
-        const dMax      = Math.max(...allVals);
-        const pad       = (dMax - dMin) * 0.12 || Math.abs(dMin) * 0.05 || 1;
-        const yMin      = parseFloat((dMin - pad).toFixed(actVal < 10 ? 2 : 0));
-        const yMax      = parseFloat((dMax + pad).toFixed(actVal < 10 ? 2 : 0));
-        const devData   = chartData.map(d => ({ t: d.t, dev: parseFloat((d.predicted - d.actual).toFixed(2)) }));
-
+        const predVal = (pred as any)[selectedOutput.key];
+        const actVal  = selectedOutput.actual;
+        const pct     = predVal !== undefined && actVal ? parseFloat(((predVal - actVal) / Math.abs(actVal) * 100).toFixed(1)) : 0;
+        const allVals = chartData.flatMap((d: any) => [d.actual, d.predicted]).filter((v: any) => !isNaN(v));
+        const dMin    = Math.min(...allVals);
+        const dMax    = Math.max(...allVals);
+        const pad     = (dMax - dMin) * 0.12 || Math.abs(dMin) * 0.05 || 1;
+        const yMin    = parseFloat((dMin - pad).toFixed(actVal < 10 ? 2 : 0));
+        const yMax    = parseFloat((dMax + pad).toFixed(actVal < 10 ? 2 : 0));
+        const devData = chartData.map((d: any) => ({ t: d.t, dev: parseFloat((d.predicted - d.actual).toFixed(2)) }));
         return (
           <div ref={chartRef}>
             <Card style={{ borderTop:`2px solid ${selectedOutput.color}` }}>
-              {/* Header */}
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
                 <div>
                   <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:5 }}>
                     <span style={{ fontSize:22 }}>{selectedOutput.icon}</span>
-                    <h3 style={{ fontSize:16, fontWeight:700, color:T.text }}>
-                      {selectedOutput.label} — Actual vs Predicted (24h)
-                    </h3>
+                    <h3 style={{ fontSize:16, fontWeight:700, color:T.text }}>{selectedOutput.label} — Actual vs Predicted (24h)</h3>
                     <Badge label={selectedOutput.target} color={selectedOutput.color} />
                   </div>
                   <div style={{ display:"flex", gap:20, fontFamily:"monospace", fontSize:10, paddingLeft:32 }}>
@@ -680,8 +641,6 @@ function RecommendationsTab({ currentParams }) {
                   borderRadius:5, padding:"5px 12px", cursor:"pointer", fontFamily:"monospace", fontSize:10,
                 }}>✕ CLOSE</button>
               </div>
-
-              {/* Trend chart */}
               <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={chartData} margin={{ top:8, right:24, left:8, bottom:0 }}>
                   <defs>
@@ -705,12 +664,8 @@ function RecommendationsTab({ currentParams }) {
                   <Area type="monotone" dataKey="predicted" name="Predicted" stroke={selectedOutput.color} fill="url(#gradPred)"   strokeWidth={2} strokeDasharray="5 3" dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
-
-              {/* Deviation bars */}
               <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${T.border}` }}>
-                <p style={{ fontFamily:"monospace", fontSize:9, color:T.sub, letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>
-                  Hourly Deviation — Predicted − Actual
-                </p>
+                <p style={{ fontFamily:"monospace", fontSize:9, color:T.sub, letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>Hourly Deviation — Predicted − Actual</p>
                 <ResponsiveContainer width="100%" height={80}>
                   <BarChart data={devData} margin={{ top:0, right:24, left:8, bottom:0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
@@ -718,7 +673,7 @@ function RecommendationsTab({ currentParams }) {
                     <YAxis stroke={T.sub} tick={{ fill:T.sub, fontSize:8 }} />
                     <Tooltip content={<CustomTooltip />} />
                     <ReferenceLine y={0} stroke={T.label} strokeOpacity={0.4} />
-                    <Bar dataKey="dev" name="Δ Deviation" fill={selectedOutput.color} fillOpacity={0.7} radius={[2,2,0,0]} />
+                    <Bar dataKey="dev" name="Δ Deviation" fill={selectedOutput.color} fillOpacity={0.7} radius={[2,2,0,0] as any} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -730,8 +685,8 @@ function RecommendationsTab({ currentParams }) {
   );
 }
 
-function runSimulation(inp) {
-  const fd = FEED_PROFILES[inp.feedQuality];
+function runSimulation(inp: any) {
+  const fd = FEED_PROFILES[inp.feedQuality as string];
   const cr = (inp.cokeRate - 300) / 20;
   const ff = (fd.znContent - 38) / 14;
   const zincRecovery   = clamp(94 - inp.zincInSlag * 4 + ff * 2 - cr * 1, 80, 99);
@@ -758,7 +713,10 @@ function runSimulation(inp) {
   return { zincRecovery, zincInSlag:inp.zincInSlag, energyEff, productionRate, slagRate, cokeConsumption:inp.cokeRate, timeline, radarData };
 }
 
-function SimRangeInput({ label, value, min, max, step, unit, onChange }) {
+function SimRangeInput({ label, value, min, max, step, unit, onChange }: {
+  label: string; value: number; min: number; max: number;
+  step: number; unit: string; onChange: (v: number) => void;
+}) {
   return (
     <div style={{ marginBottom: 13 }}>
       <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
@@ -777,22 +735,20 @@ function SimRangeInput({ label, value, min, max, step, unit, onChange }) {
   );
 }
 
-function SimulationTab({ onApply }) {
+function SimulationTab({ onApply }: { onApply: (params: any) => void }) {
   const [inp, setInp] = useState({
     feedQuality:"Standard Mixed Feed", cokeRate:300, zincInSlag:1.5,
     slagTemp:1150, znProduction:820, duration:24,
   });
-  const [res, setRes]         = useState(null);
+  const [res, setRes]         = useState<any>(null);
   const [running, setRunning] = useState(false);
-  const set = (k) => (v) => setInp(p => ({ ...p, [k]: v }));
-
+  const set = (k: string) => (v: any) => setInp(p => ({ ...p, [k]: v }));
   const handleRun = () => {
     setRunning(true); setRes(null);
     setTimeout(() => { setRes(runSimulation(inp)); setRunning(false); }, 800);
   };
-
   const fd = FEED_PROFILES[inp.feedQuality];
-  const kc = (v, tgt, better) => (better ? v >= tgt : v <= tgt) ? T.green : T.red;
+  const kc = (v: number, tgt: number, better: boolean) => (better ? v >= tgt : v <= tgt) ? T.green : T.red;
 
   return (
     <div style={{ display:"grid", gridTemplateColumns:"275px 1fr", gap:14 }}>
@@ -803,12 +759,10 @@ function SimulationTab({ onApply }) {
             <div style={{ fontSize:11, color:T.label, marginBottom:8 }}>Feed Quality</div>
             {Object.keys(FEED_PROFILES).map(k => (
               <button key={k} onClick={() => set("feedQuality")(k)} style={{
-                display:"block", width:"100%", textAlign:"left",
-                padding:"7px 11px", marginBottom:4, borderRadius:6,
+                display:"block", width:"100%", textAlign:"left", padding:"7px 11px", marginBottom:4, borderRadius:6,
                 border:`1px solid ${inp.feedQuality === k ? T.amber : T.border}`,
                 background: inp.feedQuality === k ? `${T.amber}15` : "transparent",
-                color: inp.feedQuality === k ? T.amber : T.label,
-                fontSize:12, cursor:"pointer",
+                color: inp.feedQuality === k ? T.amber : T.label, fontSize:12, cursor:"pointer",
               }}>{k}</button>
             ))}
           </div>
@@ -821,21 +775,18 @@ function SimulationTab({ onApply }) {
               </div>
             ))}
           </div>
-          <SimRangeInput label="Coke Rate"      value={inp.cokeRate}      min={250} max={350} step={5}   unit=" kg/t"  onChange={set("cokeRate")}      />
-          <SimRangeInput label="Zinc in Slag"   value={inp.zincInSlag}    min={0.5} max={4}   step={0.1} unit="% Zn"  onChange={set("zincInSlag")}    />
-          <SimRangeInput label="Slag Temp"      value={inp.slagTemp}      min={1050}max={1250}step={10}  unit="°C"    onChange={set("slagTemp")}       />
-          <SimRangeInput label="Zn Production"  value={inp.znProduction}  min={700} max={950} step={10}  unit=" t/day"onChange={set("znProduction")}  />
-          <SimRangeInput label="Duration"       value={inp.duration}      min={4}   max={48}  step={4}   unit="h"     onChange={set("duration")}       />
+          <SimRangeInput label="Coke Rate"     value={inp.cokeRate}     min={250} max={350} step={5}   unit=" kg/t"   onChange={set("cokeRate")}     />
+          <SimRangeInput label="Zinc in Slag"  value={inp.zincInSlag}   min={0.5} max={4}   step={0.1} unit="% Zn"   onChange={set("zincInSlag")}   />
+          <SimRangeInput label="Slag Temp"     value={inp.slagTemp}     min={1050}max={1250}step={10}  unit="°C"     onChange={set("slagTemp")}     />
+          <SimRangeInput label="Zn Production" value={inp.znProduction} min={700} max={950} step={10}  unit=" t/day" onChange={set("znProduction")} />
+          <SimRangeInput label="Duration"      value={inp.duration}     min={4}   max={48}  step={4}   unit="h"      onChange={set("duration")}     />
         </Card>
         <button onClick={handleRun} disabled={running} style={{
           width:"100%", padding:"13px", borderRadius:8, border:"none", marginBottom:8,
           background: running ? T.border : `linear-gradient(135deg, ${T.amber}, ${T.amberLo})`,
-          color: running ? T.sub : "#000",
-          fontSize:13, fontWeight:700, cursor: running ? "not-allowed" : "pointer",
-          letterSpacing:1.5, fontFamily:"monospace",
-        }}>
-          {running ? "⏳  SIMULATING..." : "▶  RUN SIMULATION"}
-        </button>
+          color: running ? T.sub : "#000", fontSize:13, fontWeight:700,
+          cursor: running ? "not-allowed" : "pointer", letterSpacing:1.5, fontFamily:"monospace",
+        }}>{running ? "⏳  SIMULATING..." : "▶  RUN SIMULATION"}</button>
         {res && (
           <button onClick={() => { onApply(inp); alert("Applied to Recommendations!"); }} style={{
             width:"100%", padding:"13px", borderRadius:8, border:`1px solid ${T.teal}`,
@@ -844,7 +795,6 @@ function SimulationTab({ onApply }) {
           }}>✓ APPLY TO RECOMMENDATIONS</button>
         )}
       </div>
-
       <div>
         {!res && !running && (
           <Card style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:380, gap:12 }}>
@@ -876,7 +826,7 @@ function SimulationTab({ onApply }) {
                 </Card>
               ))}
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 210px", gap:12, marginBottom:12 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 210px", gap:12 }}>
               <Card>
                 <h3 style={{ fontSize:14, fontWeight:700, color:T.text, marginBottom:12 }}>Simulation Timeline</h3>
                 <ResponsiveContainer width="100%" height={190}>
@@ -916,9 +866,9 @@ function SimulationTab({ onApply }) {
 }
 
 const TABS = [
-  { id:"overview",        label:"Overview",        sub:"Live Process Status",     icon:"◉" },
-  { id:"recommendations", label:"Recommendations", sub:"Parameter Optimisation",  icon:"⚡" },
-  { id:"simulation",      label:"Simulation",      sub:"What-if Scenarios",       icon:"▶" },
+  { id:"overview",        label:"Overview",        sub:"Live Process Status",    icon:"◉" },
+  { id:"recommendations", label:"Recommendations", sub:"Parameter Optimisation", icon:"⚡" },
+  { id:"simulation",      label:"Simulation",      sub:"What-if Scenarios",      icon:"▶" },
 ];
 
 export default function ISFDashboard() {
@@ -926,9 +876,9 @@ export default function ISFDashboard() {
   const [paused,    setPaused]    = useState(false);
   const [tick,      setTick]      = useState(0);
   const [now,       setNow]       = useState(new Date());
-  const [live, setLive]           = useState(() => Object.fromEntries(SOP.map(p => [p.id, p.target])));
-  const [hist, setHist]           = useState(() => Object.fromEntries(SOP.map(p => [p.id, genHistory(p.target, (p.max - p.min) * 0.14)])));
-  const [simParams, setSimParams] = useState(null);
+  const [live, setLive]           = useState<Record<string,number>>(() => Object.fromEntries(SOP.map(p => [p.id, p.target])));
+  const [hist, setHist]           = useState<Record<string,{t:string;v:number}[]>>(() => Object.fromEntries(SOP.map(p => [p.id, genHistory(p.target, (p.max - p.min) * 0.14)])));
+  const [simParams, setSimParams] = useState<any>(null);
   const liveRef = useRef(live);
   liveRef.current = live;
 
@@ -961,49 +911,34 @@ export default function ISFDashboard() {
     critical: SOP.filter(p => getStatus(p, live[p.id]) === "critical").length,
   };
 
-  const currentParams = {
+  const currentParams: CtrlParams = {
     blastTemp:       live.blastTemp       || 1000,
     blastPressure:   live.blastPressure   || 2.0,
     cokeSinterRatio: 4.2,
     leadSplashTemp:  live.leadSplashTemp  || 500,
     cokeRate:        live.cokeRate        || 300,
-    preheatTemp:     live.sinterPreheat   || 800,
+    preheatTemp:     live.cokePreHeat     || 800,
     oxygenEnrichment:23, znContent:45, pbContent:5,
     caoContent:10, sio2Content:22, al2o3Content:6, sContent:1.2,
     zincInSlag:   live.zincInSlag         || 1.5,
     slagTemp:     live.slagTemp           || 1400,
-    slagTapTemp:  live.slagTapTemp        || 1150,
-    znProduction: 820,
-    raftTemp:     live.raftTemp           || 2000,
-    offGasTemp:   live.offGasTemp         || 200,
-    coCo2Ratio:   live.coCo2Ratio         || 2.0,
-    cokeZincRatio:live.cokeZincRatio      || 1.5,
-    tuyereAngle:  live.tuyereAngle        || 17,
-    blastVelocity:live.blastVelocity      || 100,
-    blastInputRate:live.blastInputRate    || 12,
-    condInletTemp: live.condInletTemp     || 550,
-    condOutletTemp:live.condOutletTemp    || 450,
-    rotorSpeed:    live.rotorSpeed        || 100,
+    slagBasicity: live.slagBasicity       || 1.2,
     condEfficiency:live.condEfficiency    || 98,
-    slagBasicity:  live.slagBasicity      || 1.2,
   };
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:T.bg, color:T.text, fontFamily:"'DM Sans','Segoe UI',sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&display=swap');
-        * { box-sizing:border-box; margin:0; padding:0; }
+        *{box-sizing:border-box;margin:0;padding:0}
         input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;height:5px}
         input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:${T.amber};cursor:pointer;margin-top:-5.5px;box-shadow:0 0 8px ${T.amber}80}
         input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:rgba(255,255,255,.08)}
         ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:${T.border};border-radius:2px}
         @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
-        p { margin: 0; }
-        h1, h2, h3 { margin: 0; }
-        button { outline: none; }
+        button{outline:none}
       `}</style>
 
-      {/* SIDEBAR */}
       <aside style={{
         width:220, minHeight:"100vh", background:T.surface,
         borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column",
@@ -1034,8 +969,7 @@ export default function ISFDashboard() {
             background: paused ? `${T.amber}18` : `${T.green}14`,
             border:`1px solid ${paused ? T.amberLo : T.tealLo}`,
             color: paused ? T.amber : T.green,
-            borderRadius:5, padding:"4px 9px", cursor:"pointer",
-            fontFamily:"monospace", fontSize:9, letterSpacing:1,
+            borderRadius:5, padding:"4px 9px", cursor:"pointer", fontFamily:"monospace", fontSize:9,
           }}>{paused ? "▶ PLAY" : "⏸ LIVE"}</button>
         </div>
 
@@ -1043,12 +977,10 @@ export default function ISFDashboard() {
           <div style={{ fontFamily:"monospace", fontSize:9, letterSpacing:2, color:T.sub, textTransform:"uppercase", padding:"0 8px 10px" }}>Navigation</div>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
-              display:"flex", alignItems:"center", gap:10,
-              width:"100%", padding:"10px 12px", marginBottom:3,
+              display:"flex", alignItems:"center", gap:10, width:"100%", padding:"10px 12px", marginBottom:3,
               borderRadius:8, border:`1px solid ${activeTab === t.id ? `${T.amber}50` : "transparent"}`,
               background: activeTab === t.id ? `${T.amber}0e` : "transparent",
-              color: activeTab === t.id ? T.amber : T.sub,
-              fontSize:13, fontWeight:500, cursor:"pointer", textAlign:"left",
+              color: activeTab === t.id ? T.amber : T.sub, fontSize:13, fontWeight:500, cursor:"pointer", textAlign:"left",
             }}>
               <span style={{ fontSize:16, width:22, textAlign:"center", opacity: activeTab === t.id ? 1 : 0.45 }}>{t.icon}</span>
               <div style={{ flex:1 }}>
@@ -1061,9 +993,9 @@ export default function ISFDashboard() {
 
           <div style={{ margin:"16px 0 8px", fontFamily:"monospace", fontSize:9, letterSpacing:2, color:T.sub, textTransform:"uppercase", padding:"0 8px" }}>Live Status</div>
           {[
-            { label:"In Range",    color:T.green,  count:statusCounts.optimal  },
-            { label:"Warnings",    color:T.amber,  count:statusCounts.warning  },
-            { label:"Out of Spec", color:T.red,    count:statusCounts.critical },
+            { label:"In Range",    color:T.green, count:statusCounts.optimal  },
+            { label:"Warnings",    color:T.amber, count:statusCounts.warning  },
+            { label:"Out of Spec", color:T.red,   count:statusCounts.critical },
           ].map(s => (
             <div key={s.label} style={{
               display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -1074,10 +1006,10 @@ export default function ISFDashboard() {
               <span style={{ fontFamily:"monospace", fontSize:16, fontWeight:700, color:s.color }}>{s.count}</span>
             </div>
           ))}
+
           <div style={{ margin:"14px 0 8px", fontFamily:"monospace", fontSize:9, letterSpacing:2, color:T.sub, textTransform:"uppercase", padding:"0 8px" }}>Stages</div>
           {["SINTER","SMELT","TUYERE","COND","SLAG"].map(st => {
             const stParams = SOP.filter(p => p.stage === st);
-            const ok = stParams.filter(p => getStatus(p, statusCounts[p.id] !== undefined ? statusCounts[p.id] : p.target) === "optimal").length;
             return (
               <div key={st} style={{
                 display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -1099,7 +1031,6 @@ export default function ISFDashboard() {
         </div>
       </aside>
 
-      {/* MAIN */}
       <div style={{ marginLeft:220, flex:1, display:"flex", flexDirection:"column", minHeight:"100vh" }}>
         <header style={{
           background:T.surface, borderBottom:`1px solid ${T.border}`,
@@ -1120,8 +1051,7 @@ export default function ISFDashboard() {
             <div style={{
               display:"flex", alignItems:"center", gap:6,
               background:`${T.green}0e`, border:`1px solid ${T.green}44`,
-              color:T.green, fontFamily:"monospace", fontSize:10, letterSpacing:1.5,
-              padding:"5px 13px", borderRadius:20,
+              color:T.green, fontFamily:"monospace", fontSize:10, letterSpacing:1.5, padding:"5px 13px", borderRadius:20,
             }}>
               <span style={{ width:6, height:6, background: paused ? T.amber : T.green, borderRadius:"50%", animation: paused ? "none" : "blink 1.8s infinite" }} />
               {paused ? "PAUSED" : "● OPERATIONAL"}
