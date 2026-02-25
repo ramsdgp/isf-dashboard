@@ -1,5 +1,7 @@
-import ISFDashboard from "./ISFDashboard";
+import dynamic from "next/dynamic";
 
-export default function Home() {
+const ISFDashboard = dynamic(() => import("./ISFDashboard"), { ssr: false });
+
+export default function Page() {
   return <ISFDashboard />;
 }
