@@ -1,4 +1,3 @@
-"use client";
 import { useState, useEffect, useRef } from "react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
@@ -86,10 +85,16 @@ const FEED_PROFILES = {
   "Recycled / Secondary":    { znContent:40, gangue:15, sulfur:2.0, moisture:7  },
 };
 
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function rand(v, s) { return v + (Math.random() - 0.5) * s * 2; }
+interface SOPParam {
+  id: string; label: string; unit: string; stage: string;
+  min: number; max: number; target: number; tol: number;
+  lo: number; hi: number; sub?: string; lowerBetter?: boolean;
+}
 
-function getStatus(p, v) {
+function clamp(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
+function rand(v: number, s: number): number { return v + (Math.random() - 0.5) * s * 2; }
+
+function getStatus(p: SOPParam, v: number): "optimal" | "warning" | "critical" {
   if (p.lowerBetter) {
     if (v <= p.target) return "optimal";
     if (v <= p.max)    return "warning";
@@ -106,14 +111,14 @@ const STATUS = {
   critical: { label: "OUT OF SPEC", color: T.red    },
 };
 
-function genHistory(target, spread, n = 20) {
+function genHistory(target: number, spread: number, n: number = 20): { t: string; v: number }[] {
   return Array.from({ length: n }, (_, i) => ({
     t: `${(i * 72).toString().padStart(4, "0")}`,
     v: parseFloat(rand(target, spread * 0.4).toFixed(2)),
   }));
 }
 
-const Card = ({ children, style = {} }) => (
+const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
   <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "16px 18px", ...style }}>
     {children}
   </div>
